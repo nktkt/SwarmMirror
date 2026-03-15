@@ -333,6 +333,207 @@ impl PanoramaResult {
     }
 }
 
+/// Single agent interview result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInterview {
+    pub agent_name: String,
+    pub agent_role: String,
+    pub agent_bio: String,
+    pub question: String,
+    pub response: String,
+    pub key_quotes: Vec<String>,
+}
+
+impl AgentInterview {
+    pub fn to_dict(&self) -> Value {
+        json!({
+            "agent_name": self.agent_name,
+            "agent_role": self.agent_role,
+            "agent_bio": self.agent_bio,
+            "question": self.question,
+            "response": self.response,
+            "key_quotes": self.key_quotes
+        })
+    }
+
+    pub fn to_text(&self) -> String {
+        let mut text = format!(
+            "**{}** ({})\n_简介: {}_\n\n**Q:** {}\n\n**A:** {}\n",
+            self.agent_name, self.agent_role, self.agent_bio, self.question, self.response
+        );
+        if !self.key_quotes.is_empty() {
+            text += "\n**关键引言:**\n";
+            for quote in &self.key_quotes {
+                // Clean various quote characters
+                let clean = quote
+                    .replace('\u{201c}', "")
+                    .replace('\u{201d}', "")
+                    .replace('"', "")
+                    .replace('\u{300c}', "")
+                    .replace('\u{300d}', "");
+                let clean = clean.trim().to_string();
+                if clean.len() >= 10 {
+                    let truncated = if clean.chars().count() > 150 {
+                        // Truncate at first period after 80 chars
+                        if let Some(pos) = clean.char_indices().skip(80).find_map(|(i, _)| {
+                            if clean[i..].starts_with('\u{3002}') {
+                                Some(i + '\u{3002}'.len_utf8())
+                            } else {
+                                None
+                            }
+                        }) {
+                            clean[..pos].to_string()
+                        } else {
+                            let end = clean.char_indices().nth(147).map(|(i, _)| i).unwrap_or(clean.len());
+                            format!("{}...", &clean[..end])
+                        }
+                    } else {
+                        clean
+                    };
+                    text += &format!("> \"{}\"\n", truncated);
+                }
+            }
+        }
+        text
+    }
+}
+
+/// Interview result containing multiple agent interviews.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterviewResult {
+    pub interview_topic: String,
+    pub interview_questions: Vec<String>,
+    pub selected_agents: Vec<Value>,
+    pub interviews: Vec<AgentInterview>,
+    pub selection_reasoning: String,
+    pub summary: String,
+    pub total_agents: usize,
+    pub interviewed_count: usize,
+}
+
+impl InterviewResult {
+    pub fn new(interview_topic: String, interview_questions: Vec<String>) -> Self {
+        Self {
+            interview_topic,
+            interview_questions,
+            selected_agents: Vec::new(),
+            interviews: Vec::new(),
+            selection_reasoning: String::new(),
+            summary: String::new(),
+            total_agents: 0,
+            interviewed_count: 0,
+        }
+    }
+
+    pub fn to_dict(&self) -> Value {
+        json!({
+            "interview_topic": self.interview_topic,
+            "interview_questions": self.interview_questions,
+            "selected_agents": self.selected_agents,
+            "interviews": self.interviews.iter().map(|i| i.to_dict()).collect::<Vec<_>>(),
+            "selection_reasoning": self.selection_reasoning,
+            "summary": self.summary,
+            "total_agents": self.total_agents,
+            "interviewed_count": self.interviewed_count
+        })
+    }
+
+    pub fn to_text(&self) -> String {
+        let mut parts = vec![
+            "## 深度采访报告".to_string(),
+            format!("**采访主题:** {}", self.interview_topic),
+            format!(
+                "**采访人数:** {} / {} 位模拟Agent",
+                self.interviewed_count, self.total_agents
+            ),
+            "\n### 采访对象选择理由".to_string(),
+            if self.selection_reasoning.is_empty() {
+                "（自动选择）".to_string()
+            } else {
+                self.selection_reasoning.clone()
+            },
+            "\n---".to_string(),
+            "\n### 采访实录".to_string(),
+        ];
+
+        if !self.interviews.is_empty() {
+            for (i, interview) in self.interviews.iter().enumerate() {
+                parts.push(format!("\n#### 采访 #{}: {}", i + 1, interview.agent_name));
+                parts.push(interview.to_text());
+                parts.push("\n---".to_string());
+            }
+        } else {
+            parts.push("（无采访记录）\n\n---".to_string());
+        }
+
+        parts.push("\n### 采访摘要与核心观点".to_string());
+        parts.push(if self.summary.is_empty() {
+            "（无摘要）".to_string()
+        } else {
+            self.summary.clone()
+        });
+
+        parts.join("\n")
+    }
+}
+
+/// Graph statistics result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphStatistics {
+    pub graph_id: String,
+    pub total_nodes: usize,
+    pub total_edges: usize,
+    pub entity_types: HashMap<String, usize>,
+    pub relation_types: HashMap<String, usize>,
+    pub average_degree: f64,
+    pub top_entities: Vec<Value>,
+}
+
+impl GraphStatistics {
+    pub fn to_dict(&self) -> Value {
+        json!({
+            "graph_id": self.graph_id,
+            "total_nodes": self.total_nodes,
+            "total_edges": self.total_edges,
+            "entity_types": self.entity_types,
+            "relation_types": self.relation_types,
+            "average_degree": self.average_degree,
+            "top_entities": self.top_entities
+        })
+    }
+
+    pub fn to_text(&self) -> String {
+        let mut parts = vec![
+            "## 图谱统计信息".to_string(),
+            format!("图谱ID: {}", self.graph_id),
+            format!("总节点数: {}", self.total_nodes),
+            format!("总边数: {}", self.total_edges),
+            format!("平均度: {:.2}", self.average_degree),
+        ];
+        if !self.entity_types.is_empty() {
+            parts.push("\n### 实体类型分布".to_string());
+            for (etype, count) in &self.entity_types {
+                parts.push(format!("- {}: {}", etype, count));
+            }
+        }
+        if !self.relation_types.is_empty() {
+            parts.push("\n### 关系类型分布".to_string());
+            for (rtype, count) in &self.relation_types {
+                parts.push(format!("- {}: {}", rtype, count));
+            }
+        }
+        if !self.top_entities.is_empty() {
+            parts.push("\n### 核心实体 (按边数排序)".to_string());
+            for entity in &self.top_entities {
+                let name = entity["name"].as_str().unwrap_or("未知");
+                let edge_count = entity["edge_count"].as_u64().unwrap_or(0);
+                parts.push(format!("- {} ({}条边)", name, edge_count));
+            }
+        }
+        parts.join("\n")
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ZepToolsService
 // ═══════════════════════════════════════════════════════════════
@@ -1047,15 +1248,724 @@ impl ZepToolsService {
     }
 
     /// Format search results for LLM consumption.
-    pub fn format_facts_for_llm(facts: &[String]) -> String {
+    ///
+    /// Numbers facts, groups by relevance, and truncates if too long.
+    pub fn format_facts_for_llm(facts: &[String], max_chars: Option<usize>) -> String {
         if facts.is_empty() {
             return "No specific facts found.".to_string();
         }
-        facts
+        let max_chars = max_chars.unwrap_or(8000);
+        let mut result = String::new();
+        let mut total_len = 0usize;
+        for (i, f) in facts.iter().enumerate() {
+            let line = format!("{}. {}\n", i + 1, f);
+            if total_len + line.len() > max_chars {
+                result += &format!(
+                    "\n... (截断: 共{}条事实, 已显示{}条)\n",
+                    facts.len(),
+                    i
+                );
+                break;
+            }
+            total_len += line.len();
+            result += &line;
+        }
+        result.trim_end().to_string()
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Node / Edge query helpers
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Get detailed info about a specific node including connected edge count
+    /// and related entities.
+    pub async fn get_node_info(&self, graph_id: &str, node_uuid: &str) -> Option<Value> {
+        debug!(node_uuid, "Getting detailed node info");
+        let node = self.get_node_detail(node_uuid).await?;
+        let edges = self.get_node_edges(graph_id, node_uuid).await;
+
+        // Collect related entity UUIDs
+        let mut related_entities: Vec<Value> = Vec::new();
+        let mut seen_uuids: HashSet<String> = HashSet::new();
+        for edge in &edges {
+            let other_uuid = if edge.source_node_uuid == node_uuid {
+                &edge.target_node_uuid
+            } else {
+                &edge.source_node_uuid
+            };
+            if seen_uuids.insert(other_uuid.clone()) {
+                let other_name = if edge.source_node_uuid == node_uuid {
+                    edge.target_node_name.as_deref().unwrap_or(other_uuid)
+                } else {
+                    edge.source_node_name.as_deref().unwrap_or(other_uuid)
+                };
+                related_entities.push(json!({
+                    "uuid": other_uuid,
+                    "name": other_name,
+                    "relation": edge.name
+                }));
+            }
+        }
+
+        Some(json!({
+            "uuid": node.uuid,
+            "name": node.name,
+            "labels": node.labels,
+            "summary": node.summary,
+            "attributes": node.attributes,
+            "connected_edges_count": edges.len(),
+            "related_entities": related_entities
+        }))
+    }
+
+    /// Get all neighboring nodes connected to a given node, including the
+    /// connecting edge info.
+    pub async fn get_node_neighbors(
+        &self,
+        graph_id: &str,
+        node_uuid: &str,
+    ) -> Vec<Value> {
+        debug!(node_uuid, "Getting node neighbors");
+        let edges = self.get_node_edges(graph_id, node_uuid).await;
+
+        let mut neighbors: Vec<Value> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+
+        for edge in &edges {
+            let (neighbor_uuid, direction) = if edge.source_node_uuid == node_uuid {
+                (&edge.target_node_uuid, "outgoing")
+            } else {
+                (&edge.source_node_uuid, "incoming")
+            };
+
+            if !seen.insert(neighbor_uuid.clone()) {
+                continue;
+            }
+
+            // Attempt to get neighbor detail
+            let neighbor_info = self.get_node_detail(neighbor_uuid).await;
+            let neighbor_name = neighbor_info
+                .as_ref()
+                .map(|n| n.name.clone())
+                .unwrap_or_else(|| neighbor_uuid[..neighbor_uuid.len().min(8)].to_string());
+            let neighbor_labels = neighbor_info
+                .as_ref()
+                .map(|n| n.labels.clone())
+                .unwrap_or_default();
+
+            neighbors.push(json!({
+                "uuid": neighbor_uuid,
+                "name": neighbor_name,
+                "labels": neighbor_labels,
+                "direction": direction,
+                "edge": {
+                    "uuid": edge.uuid,
+                    "name": edge.name,
+                    "fact": edge.fact
+                }
+            }));
+        }
+
+        info!("Found {} neighbors for node {}", neighbors.len(), &node_uuid[..node_uuid.len().min(8)]);
+        neighbors
+    }
+
+    /// Get all edges for a specific entity by name, including source/target
+    /// node names. Returns both incoming and outgoing edges.
+    pub async fn get_entity_edges(
+        &self,
+        graph_id: &str,
+        entity_name: &str,
+    ) -> Vec<EdgeInfo> {
+        info!(entity_name, "Getting entity edges");
+        // Find entity node
+        let all_nodes = self.get_all_nodes(graph_id).await.unwrap_or_default();
+        let entity_node = all_nodes
+            .iter()
+            .find(|n| n.name.to_lowercase() == entity_name.to_lowercase());
+
+        let node_uuid = match entity_node {
+            Some(node) => node.uuid.clone(),
+            None => {
+                warn!("Entity not found: {}", entity_name);
+                return Vec::new();
+            }
+        };
+
+        // Build node name map for resolving UUIDs
+        let node_map: HashMap<&str, &str> = all_nodes
+            .iter()
+            .map(|n| (n.uuid.as_str(), n.name.as_str()))
+            .collect();
+
+        let all_edges = self.get_all_edges(graph_id, true).await.unwrap_or_default();
+        let mut result = Vec::new();
+
+        for edge in all_edges {
+            if edge.source_node_uuid == node_uuid || edge.target_node_uuid == node_uuid {
+                let mut edge_with_names = edge;
+                edge_with_names.source_node_name = node_map
+                    .get(edge_with_names.source_node_uuid.as_str())
+                    .map(|s| s.to_string());
+                edge_with_names.target_node_name = node_map
+                    .get(edge_with_names.target_node_uuid.as_str())
+                    .map(|s| s.to_string());
+                result.push(edge_with_names);
+            }
+        }
+
+        info!("Found {} edges for entity {}", result.len(), entity_name);
+        result
+    }
+
+    /// Get comprehensive graph statistics including average degree and top
+    /// entities by edge count.
+    pub async fn get_graph_statistics_detailed(&self, graph_id: &str) -> GraphStatistics {
+        info!(graph_id, "Getting detailed graph statistics");
+        let nodes = self.get_all_nodes(graph_id).await.unwrap_or_default();
+        let edges = self.get_all_edges(graph_id, false).await.unwrap_or_default();
+
+        // Entity type distribution
+        let mut entity_types: HashMap<String, usize> = HashMap::new();
+        for node in &nodes {
+            for label in &node.labels {
+                if label != "Entity" && label != "Node" {
+                    *entity_types.entry(label.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // Relation type distribution
+        let mut relation_types: HashMap<String, usize> = HashMap::new();
+        for edge in &edges {
+            *relation_types.entry(edge.name.clone()).or_insert(0) += 1;
+        }
+
+        // Compute degree for each node
+        let mut degree_map: HashMap<String, usize> = HashMap::new();
+        for edge in &edges {
+            *degree_map
+                .entry(edge.source_node_uuid.clone())
+                .or_insert(0) += 1;
+            *degree_map
+                .entry(edge.target_node_uuid.clone())
+                .or_insert(0) += 1;
+        }
+
+        let average_degree = if nodes.is_empty() {
+            0.0
+        } else {
+            let total_degree: usize = degree_map.values().sum();
+            total_degree as f64 / nodes.len() as f64
+        };
+
+        // Top entities by edge count
+        let node_name_map: HashMap<&str, &str> = nodes
+            .iter()
+            .map(|n| (n.uuid.as_str(), n.name.as_str()))
+            .collect();
+
+        let mut degree_vec: Vec<(&String, &usize)> = degree_map.iter().collect();
+        degree_vec.sort_by(|a, b| b.1.cmp(a.1));
+
+        let top_entities: Vec<Value> = degree_vec
+            .iter()
+            .take(10)
+            .map(|(uuid, count)| {
+                let name = node_name_map
+                    .get(uuid.as_str())
+                    .copied()
+                    .unwrap_or("未知");
+                json!({
+                    "uuid": uuid,
+                    "name": name,
+                    "edge_count": count
+                })
+            })
+            .collect();
+
+        GraphStatistics {
+            graph_id: graph_id.to_string(),
+            total_nodes: nodes.len(),
+            total_edges: edges.len(),
+            entity_types,
+            relation_types,
+            average_degree,
+            top_entities,
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Interview tool
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Interview simulation agents via the real OASIS API.
+    ///
+    /// 1. Load agent profiles from simulation directory
+    /// 2. Use LLM to select the most relevant agents
+    /// 3. Generate interview questions (if none provided)
+    /// 4. Call the batch interview API (via SimulationIPCClient)
+    /// 5. Build an `InterviewResult` with all responses
+    pub async fn interview_agents(
+        &self,
+        simulation_id: &str,
+        interview_requirement: &str,
+        simulation_requirement: &str,
+        max_agents: usize,
+        custom_questions: Option<Vec<String>>,
+    ) -> InterviewResult {
+        info!(
+            "InterviewAgents: {}...",
+            &interview_requirement[..interview_requirement.len().min(50)]
+        );
+
+        let mut result = InterviewResult::new(
+            interview_requirement.to_string(),
+            custom_questions.clone().unwrap_or_default(),
+        );
+
+        // Step 1: Load agent profiles
+        let profiles = Self::load_agent_profiles(simulation_id).await;
+        if profiles.is_empty() {
+            warn!("No agent profiles found for simulation {}", simulation_id);
+            result.summary = "未找到可采访的Agent人设文件".to_string();
+            return result;
+        }
+        result.total_agents = profiles.len();
+        info!("Loaded {} agent profiles", profiles.len());
+
+        // Step 2: Select agents via LLM
+        let (selected_agents, selected_indices, reasoning) = self
+            .select_agents_for_interview(
+                &profiles,
+                interview_requirement,
+                simulation_requirement,
+                max_agents,
+            )
+            .await;
+        result.selected_agents = selected_agents.clone();
+        result.selection_reasoning = reasoning;
+        info!("Selected {} agents for interview", selected_indices.len());
+
+        // Step 3: Generate questions if not provided
+        if result.interview_questions.is_empty() {
+            result.interview_questions = self
+                .generate_interview_questions(
+                    interview_requirement,
+                    simulation_requirement,
+                    &selected_agents,
+                )
+                .await;
+            info!(
+                "Generated {} interview questions",
+                result.interview_questions.len()
+            );
+        }
+
+        // Build combined prompt
+        let combined_prompt: String = result
+            .interview_questions
             .iter()
             .enumerate()
-            .map(|(i, f)| format!("{}. {}", i + 1, f))
+            .map(|(i, q)| format!("{}. {}", i + 1, q))
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n");
+
+        let optimized_prompt = format!(
+            "你正在接受一次采访。请结合你的人设、所有的过往记忆与行动，\
+            以纯文本方式直接回答以下问题。\n\
+            回复要求：\n\
+            1. 直接用自然语言回答，不要调用任何工具\n\
+            2. 不要返回JSON格式或工具调用格式\n\
+            3. 不要使用Markdown标题（如#、##、###）\n\
+            4. 按问题编号逐一回答，每个回答以「问题X：」开头（X为问题编号）\n\
+            5. 每个问题的回答之间用空行分隔\n\
+            6. 回答要有实质内容，每个问题至少回答2-3句话\n\n{}",
+            combined_prompt
+        );
+
+        // Step 4: Use IPC to call the batch interview API
+        let sim_dir = format!("uploads/simulations/{}", simulation_id);
+        match super::simulation_ipc::SimulationIPCClient::new(&sim_dir).await {
+            Ok(ipc_client) => {
+                // Build batch interviews
+                let interviews_request: Vec<Value> = selected_indices
+                    .iter()
+                    .map(|&idx| {
+                        json!({
+                            "agent_id": idx,
+                            "prompt": optimized_prompt
+                        })
+                    })
+                    .collect();
+
+                match ipc_client
+                    .send_batch_interview(interviews_request, None, 180.0)
+                    .await
+                {
+                    Ok(response) => {
+                        if response.status
+                            == super::simulation_ipc::CommandStatus::Completed
+                        {
+                            let results_map = response.result.unwrap_or_default();
+                            // Parse responses for each agent
+                            for (i, &agent_idx) in selected_indices.iter().enumerate() {
+                                if i >= selected_agents.len() {
+                                    break;
+                                }
+                                let agent = &selected_agents[i];
+                                let agent_name = agent["realname"]
+                                    .as_str()
+                                    .or(agent["username"].as_str())
+                                    .unwrap_or(&format!("Agent_{}", agent_idx))
+                                    .to_string();
+                                let agent_role = agent["profession"]
+                                    .as_str()
+                                    .unwrap_or("未知")
+                                    .to_string();
+                                let agent_bio = agent["bio"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .to_string();
+
+                                let key = format!("twitter_{}", agent_idx);
+                                let resp_val = results_map
+                                    .get(&key)
+                                    .cloned()
+                                    .unwrap_or(Value::Null);
+                                let response_text = resp_val["response"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .to_string();
+
+                                let interview = AgentInterview {
+                                    agent_name,
+                                    agent_role,
+                                    agent_bio,
+                                    question: combined_prompt.clone(),
+                                    response: response_text,
+                                    key_quotes: Vec::new(),
+                                };
+                                result.interviews.push(interview);
+                            }
+                            result.interviewed_count = result.interviews.len();
+                        } else {
+                            let err = response.error.unwrap_or_else(|| "未知错误".to_string());
+                            warn!("Interview API returned failure: {}", err);
+                            result.summary =
+                                format!("采访API调用失败：{}。请检查OASIS模拟环境状态。", err);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Interview IPC call failed: {}", e);
+                        result.summary = format!(
+                            "采访失败：{}。模拟环境可能已关闭，请确保OASIS环境正在运行。",
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to create IPC client: {}", e);
+                result.summary = format!("无法连接模拟环境：{}", e);
+            }
+        }
+
+        // Step 5: Generate summary
+        if !result.interviews.is_empty() {
+            result.summary = self
+                .generate_interview_summary(&result.interviews, interview_requirement)
+                .await;
+        }
+
+        info!(
+            "InterviewAgents complete: interviewed {} agents",
+            result.interviewed_count
+        );
+        result
+    }
+
+    // ─── Interview helper methods ───
+
+    /// Load agent profiles from the simulation directory.
+    async fn load_agent_profiles(simulation_id: &str) -> Vec<Value> {
+        let sim_dir = format!("uploads/simulations/{}", simulation_id);
+
+        // Try Reddit JSON first
+        let reddit_path = format!("{}/reddit_profiles.json", sim_dir);
+        if let Ok(data) = tokio::fs::read_to_string(&reddit_path).await {
+            if let Ok(profiles) = serde_json::from_str::<Vec<Value>>(&data) {
+                info!("Loaded {} profiles from reddit_profiles.json", profiles.len());
+                return profiles;
+            }
+        }
+
+        // Try Twitter CSV
+        let twitter_path = format!("{}/twitter_profiles.csv", sim_dir);
+        if let Ok(data) = tokio::fs::read_to_string(&twitter_path).await {
+            let mut profiles = Vec::new();
+            let mut lines = data.lines();
+            let header = match lines.next() {
+                Some(h) => h,
+                None => return profiles,
+            };
+            let headers: Vec<&str> = header.split(',').collect();
+            for line in lines {
+                let fields: Vec<&str> = line.split(',').collect();
+                let mut profile = serde_json::Map::new();
+                for (i, &h) in headers.iter().enumerate() {
+                    let val = fields.get(i).unwrap_or(&"");
+                    profile.insert(h.to_string(), Value::String(val.to_string()));
+                }
+                profiles.push(Value::Object(profile));
+            }
+            info!("Loaded {} profiles from twitter_profiles.csv", profiles.len());
+            return profiles;
+        }
+
+        Vec::new()
+    }
+
+    /// Use LLM to select the most relevant agents for interview.
+    async fn select_agents_for_interview(
+        &self,
+        profiles: &[Value],
+        interview_requirement: &str,
+        simulation_requirement: &str,
+        max_agents: usize,
+    ) -> (Vec<Value>, Vec<usize>, String) {
+        let llm = match self.llm() {
+            Some(l) => l,
+            None => {
+                let n = max_agents.min(profiles.len());
+                let selected: Vec<Value> = profiles[..n].to_vec();
+                let indices: Vec<usize> = (0..n).collect();
+                return (selected, indices, "使用默认选择策略".to_string());
+            }
+        };
+
+        // Build agent summaries
+        let agent_summaries: Vec<Value> = profiles
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                json!({
+                    "index": i,
+                    "name": p["realname"].as_str().or(p["username"].as_str()).unwrap_or(""),
+                    "profession": p["profession"].as_str().unwrap_or("未知"),
+                    "bio": p["bio"].as_str().unwrap_or("").chars().take(200).collect::<String>(),
+                })
+            })
+            .collect();
+
+        let system_prompt = "你是一个专业的采访策划专家。你的任务是根据采访需求，从模拟Agent列表中选择最适合采访的对象。\n\n\
+            选择标准：\n\
+            1. Agent的身份/职业与采访主题相关\n\
+            2. Agent可能持有独特或有价值的观点\n\
+            3. 选择多样化的视角\n\
+            4. 优先选择与事件直接相关的角色\n\n\
+            返回JSON格式：{\"selected_indices\": [索引列表], \"reasoning\": \"理由\"}";
+
+        let sim_bg = if simulation_requirement.is_empty() {
+            "未提供".to_string()
+        } else {
+            simulation_requirement.to_string()
+        };
+
+        let user_prompt = format!(
+            "采访需求：\n{}\n\n模拟背景：\n{}\n\n可选择的Agent列表（共{}个）：\n{}\n\n请选择最多{}个最适合采访的Agent。",
+            interview_requirement,
+            sim_bg,
+            agent_summaries.len(),
+            serde_json::to_string_pretty(&agent_summaries).unwrap_or_default(),
+            max_agents
+        );
+
+        let messages = vec![
+            ChatMessage {
+                role: "system".into(),
+                content: system_prompt.to_string(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: user_prompt,
+            },
+        ];
+
+        match llm.chat_json(&messages, 0.3, 2048).await {
+            Ok(resp) => {
+                let indices: Vec<usize> = resp["selected_indices"]
+                    .as_array()
+                    .unwrap_or(&Vec::new())
+                    .iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as usize))
+                    .filter(|&i| i < profiles.len())
+                    .take(max_agents)
+                    .collect();
+                let reasoning = resp["reasoning"]
+                    .as_str()
+                    .unwrap_or("基于相关性自动选择")
+                    .to_string();
+                let selected: Vec<Value> = indices.iter().map(|&i| profiles[i].clone()).collect();
+                (selected, indices, reasoning)
+            }
+            Err(e) => {
+                warn!("LLM agent selection failed, using default: {}", e);
+                let n = max_agents.min(profiles.len());
+                let selected: Vec<Value> = profiles[..n].to_vec();
+                let indices: Vec<usize> = (0..n).collect();
+                (selected, indices, "使用默认选择策略".to_string())
+            }
+        }
+    }
+
+    /// Generate interview questions using LLM.
+    async fn generate_interview_questions(
+        &self,
+        interview_requirement: &str,
+        simulation_requirement: &str,
+        selected_agents: &[Value],
+    ) -> Vec<String> {
+        let llm = match self.llm() {
+            Some(l) => l,
+            None => {
+                return vec![
+                    format!("关于{}，您的观点是什么？", interview_requirement),
+                    "这件事对您或您所代表的群体有什么影响？".to_string(),
+                    "您认为应该如何解决或改进这个问题？".to_string(),
+                ];
+            }
+        };
+
+        let agent_roles: Vec<String> = selected_agents
+            .iter()
+            .map(|a| {
+                a["profession"]
+                    .as_str()
+                    .unwrap_or("未知")
+                    .to_string()
+            })
+            .collect();
+
+        let system_prompt = "你是一个专业的记者/采访者。根据采访需求，生成3-5个深度采访问题。\n\n\
+            问题要求：\n\
+            1. 开放性问题，鼓励详细回答\n\
+            2. 针对不同角色可能有不同答案\n\
+            3. 涵盖事实、观点、感受等多个维度\n\
+            4. 语言自然，像真实采访一样\n\
+            5. 每个问题控制在50字以内\n\n\
+            返回JSON格式：{\"questions\": [\"问题1\", \"问题2\", ...]}";
+
+        let sim_bg = if simulation_requirement.is_empty() {
+            "未提供".to_string()
+        } else {
+            simulation_requirement.to_string()
+        };
+
+        let user_prompt = format!(
+            "采访需求：{}\n\n模拟背景：{}\n\n采访对象角色：{}\n\n请生成3-5个采访问题。",
+            interview_requirement,
+            sim_bg,
+            agent_roles.join(", ")
+        );
+
+        let messages = vec![
+            ChatMessage {
+                role: "system".into(),
+                content: system_prompt.to_string(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: user_prompt,
+            },
+        ];
+
+        match llm.chat_json(&messages, 0.5, 2048).await {
+            Ok(resp) => resp["questions"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_else(|| {
+                    vec![format!("关于{}，您有什么看法？", interview_requirement)]
+                }),
+            Err(e) => {
+                warn!("Failed to generate interview questions: {}", e);
+                vec![
+                    format!("关于{}，您的观点是什么？", interview_requirement),
+                    "这件事对您或您所代表的群体有什么影响？".to_string(),
+                    "您认为应该如何解决或改进这个问题？".to_string(),
+                ]
+            }
+        }
+    }
+
+    /// Generate a summary of all interview responses using LLM.
+    async fn generate_interview_summary(
+        &self,
+        interviews: &[AgentInterview],
+        interview_requirement: &str,
+    ) -> String {
+        if interviews.is_empty() {
+            return "未完成任何采访".to_string();
+        }
+
+        let llm = match self.llm() {
+            Some(l) => l,
+            None => {
+                let names: Vec<&str> = interviews.iter().map(|i| i.agent_name.as_str()).collect();
+                return format!("共采访了{}位受访者，包括：{}", interviews.len(), names.join("、"));
+            }
+        };
+
+        let interview_texts: Vec<String> = interviews
+            .iter()
+            .map(|i| {
+                let response_truncated: String = i.response.chars().take(500).collect();
+                format!(
+                    "【{}（{}）】\n{}",
+                    i.agent_name, i.agent_role, response_truncated
+                )
+            })
+            .collect();
+
+        let system_prompt = "你是一个专业的新闻编辑。请根据多位受访者的回答，生成一份采访摘要。\n\n\
+            摘要要求：\n\
+            1. 提炼各方主要观点\n\
+            2. 指出观点的共识和分歧\n\
+            3. 突出有价值的引言\n\
+            4. 客观中立，不偏袒任何一方\n\
+            5. 控制在1000字内";
+
+        let user_prompt = format!(
+            "采访主题：{}\n\n采访内容：\n{}\n\n请生成采访摘要。",
+            interview_requirement,
+            interview_texts.join("\n\n")
+        );
+
+        let messages = vec![
+            ChatMessage {
+                role: "system".into(),
+                content: system_prompt.to_string(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: user_prompt,
+            },
+        ];
+
+        match llm
+            .chat(&messages, 0.3, 800, None)
+            .await
+        {
+            Ok(summary) => summary,
+            Err(e) => {
+                warn!("Failed to generate interview summary: {}", e);
+                let names: Vec<&str> = interviews.iter().map(|i| i.agent_name.as_str()).collect();
+                format!("共采访了{}位受访者，包括：{}", interviews.len(), names.join("、"))
+            }
+        }
     }
 }

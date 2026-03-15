@@ -33,6 +33,18 @@ pub enum CommandType {
     BatchInterview,
     /// Close the simulation environment
     CloseEnv,
+    /// Start a new simulation round
+    StartRound,
+    /// Pause the running simulation
+    PauseSimulation,
+    /// Resume a paused simulation
+    ResumeSimulation,
+    /// Gracefully stop the simulation
+    StopSimulation,
+    /// Get current simulation status
+    GetStatus,
+    /// Get results from a specific round
+    GetRoundResults,
 }
 
 impl std::fmt::Display for CommandType {
@@ -41,6 +53,12 @@ impl std::fmt::Display for CommandType {
             CommandType::Interview => write!(f, "interview"),
             CommandType::BatchInterview => write!(f, "batch_interview"),
             CommandType::CloseEnv => write!(f, "close_env"),
+            CommandType::StartRound => write!(f, "start_round"),
+            CommandType::PauseSimulation => write!(f, "pause_simulation"),
+            CommandType::ResumeSimulation => write!(f, "resume_simulation"),
+            CommandType::StopSimulation => write!(f, "stop_simulation"),
+            CommandType::GetStatus => write!(f, "get_status"),
+            CommandType::GetRoundResults => write!(f, "get_round_results"),
         }
     }
 }
@@ -306,6 +324,77 @@ impl SimulationIPCClient {
             .await
     }
 
+    /// Send a command to start a new simulation round.
+    ///
+    /// # Arguments
+    /// * `round_number` - Optional specific round number to start. If `None`,
+    ///   starts the next sequential round.
+    /// * `timeout_secs` - Maximum wait time.
+    pub async fn start_round(
+        &self,
+        round_number: Option<usize>,
+        timeout_secs: f64,
+    ) -> Result<IPCResponse> {
+        let mut args = HashMap::new();
+        if let Some(rn) = round_number {
+            args.insert("round_number".into(), Value::from(rn as u64));
+        }
+        self.send_command(CommandType::StartRound, args, timeout_secs, 0.5)
+            .await
+    }
+
+    /// Pause the running simulation.
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - Maximum wait time.
+    pub async fn pause_simulation(&self, timeout_secs: f64) -> Result<IPCResponse> {
+        self.send_command(CommandType::PauseSimulation, HashMap::new(), timeout_secs, 0.5)
+            .await
+    }
+
+    /// Resume a paused simulation.
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - Maximum wait time.
+    pub async fn resume_simulation(&self, timeout_secs: f64) -> Result<IPCResponse> {
+        self.send_command(CommandType::ResumeSimulation, HashMap::new(), timeout_secs, 0.5)
+            .await
+    }
+
+    /// Gracefully stop the simulation.
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - Maximum wait time.
+    pub async fn stop_simulation(&self, timeout_secs: f64) -> Result<IPCResponse> {
+        self.send_command(CommandType::StopSimulation, HashMap::new(), timeout_secs, 0.5)
+            .await
+    }
+
+    /// Get current simulation status (round, agent states, etc.).
+    ///
+    /// # Arguments
+    /// * `timeout_secs` - Maximum wait time.
+    pub async fn get_status(&self, timeout_secs: f64) -> Result<IPCResponse> {
+        self.send_command(CommandType::GetStatus, HashMap::new(), timeout_secs, 0.5)
+            .await
+    }
+
+    /// Get results from a specific round.
+    ///
+    /// # Arguments
+    /// * `round_number` - The round number to get results for.
+    /// * `timeout_secs` - Maximum wait time.
+    pub async fn get_round_results(
+        &self,
+        round_number: usize,
+        timeout_secs: f64,
+    ) -> Result<IPCResponse> {
+        let mut args = HashMap::new();
+        args.insert("round_number".into(), Value::from(round_number as u64));
+        self.send_command(CommandType::GetRoundResults, args, timeout_secs, 0.5)
+            .await
+    }
+
     /// Check whether the simulation environment is alive by reading
     /// `env_status.json`.
     pub async fn check_env_alive(&self) -> bool {
@@ -482,5 +571,152 @@ impl SimulationIPCServer {
             Some(error.to_string()),
         );
         self.send_response(&response).await
+    }
+
+    /// Dispatch a received command to the appropriate handler.
+    ///
+    /// Returns `true` if the command was handled, `false` if the server
+    /// should shut down (e.g. `CloseEnv` / `StopSimulation`).
+    pub async fn handle_command<F, Fut>(
+        &self,
+        command: &IPCCommand,
+        handler: F,
+    ) -> Result<bool>
+    where
+        F: FnOnce(&CommandType, &HashMap<String, Value>) -> Fut,
+        Fut: std::future::Future<Output = Result<HashMap<String, Value>>>,
+    {
+        info!(
+            "Handling command: {} (id={})",
+            command.command_type, command.command_id
+        );
+
+        match handler(&command.command_type, &command.args).await {
+            Ok(result) => {
+                self.send_success(&command.command_id, result).await?;
+            }
+            Err(e) => {
+                self.send_error(&command.command_id, &e.to_string())
+                    .await?;
+            }
+        }
+
+        // Signal shutdown for close/stop commands
+        let should_continue = !matches!(
+            command.command_type,
+            CommandType::CloseEnv | CommandType::StopSimulation
+        );
+        Ok(should_continue)
+    }
+
+    /// Handle a `StartRound` command.
+    pub async fn handle_start_round(
+        &self,
+        command_id: &str,
+        round_number: Option<usize>,
+    ) -> Result<()> {
+        info!("Handling StartRound: round={:?}", round_number);
+        let mut result = HashMap::new();
+        result.insert(
+            "status".to_string(),
+            Value::String("round_started".to_string()),
+        );
+        if let Some(rn) = round_number {
+            result.insert("round_number".to_string(), Value::from(rn as u64));
+        }
+        self.send_success(command_id, result).await
+    }
+
+    /// Handle a `PauseSimulation` command.
+    pub async fn handle_pause(&self, command_id: &str) -> Result<()> {
+        info!("Handling PauseSimulation");
+        let mut result = HashMap::new();
+        result.insert(
+            "status".to_string(),
+            Value::String("paused".to_string()),
+        );
+        self.send_success(command_id, result).await
+    }
+
+    /// Handle a `ResumeSimulation` command.
+    pub async fn handle_resume(&self, command_id: &str) -> Result<()> {
+        info!("Handling ResumeSimulation");
+        let mut result = HashMap::new();
+        result.insert(
+            "status".to_string(),
+            Value::String("resumed".to_string()),
+        );
+        self.send_success(command_id, result).await
+    }
+
+    /// Handle a `StopSimulation` command.
+    pub async fn handle_stop(&mut self, command_id: &str) -> Result<()> {
+        info!("Handling StopSimulation");
+        let mut result = HashMap::new();
+        result.insert(
+            "status".to_string(),
+            Value::String("stopped".to_string()),
+        );
+        self.send_success(command_id, result).await?;
+        self.stop().await
+    }
+
+    /// Handle a `GetStatus` command.
+    pub async fn handle_get_status(&self, command_id: &str) -> Result<()> {
+        info!("Handling GetStatus");
+        let mut result = HashMap::new();
+        result.insert(
+            "running".to_string(),
+            Value::Bool(self.running),
+        );
+        result.insert(
+            "status".to_string(),
+            Value::String(
+                if self.running {
+                    "alive".to_string()
+                } else {
+                    "stopped".to_string()
+                },
+            ),
+        );
+        self.send_success(command_id, result).await
+    }
+
+    /// Handle a `GetRoundResults` command.
+    pub async fn handle_get_round_results(
+        &self,
+        command_id: &str,
+        round_number: usize,
+    ) -> Result<()> {
+        info!("Handling GetRoundResults: round={}", round_number);
+        let round_file = self
+            .simulation_dir
+            .join(format!("round_{:03}.json", round_number));
+
+        if !round_file.exists() {
+            self.send_error(
+                command_id,
+                &format!("Round {} results not found", round_number),
+            )
+            .await
+        } else {
+            match fs::read_to_string(&round_file).await {
+                Ok(content) => {
+                    let mut result = HashMap::new();
+                    let round_data: Value =
+                        serde_json::from_str(&content).unwrap_or(Value::Null);
+                    result.insert("round_number".to_string(), Value::from(round_number as u64));
+                    result.insert("data".to_string(), round_data);
+                    self.send_success(command_id, result).await
+                }
+                Err(e) => {
+                    self.send_error(
+                        command_id,
+                        &format!("Failed to read round {} results: {}", round_number, e),
+                    )
+                    .await
+                }
+            }
+        }
     }
 }
