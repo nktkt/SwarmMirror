@@ -1,0 +1,8 @@
+MiroFish/
+backend/target/
+frontend/.next/
+frontend/node_modules/
+node_modules/
+.git/
+.env
+*.md

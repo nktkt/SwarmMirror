@@ -25,6 +25,18 @@ export default function GraphPanel({ graphData, loading, currentPhase, isSimulat
   const simulationRef = useRef<d3.Simulation<any, any> | null>(null)
   const [selectedItem, setSelectedItem] = useState<any>(null)
   const [showEdgeLabels, setShowEdgeLabels] = useState(true)
+  const [showFinishedHint, setShowFinishedHint] = useState(false)
+  const prevSimulating = useRef(isSimulating)
+
+  // Show hint when simulation transitions from running to finished
+  useEffect(() => {
+    if (prevSimulating.current && !isSimulating) {
+      setShowFinishedHint(true)
+      const timer = setTimeout(() => setShowFinishedHint(false), 5000)
+      return () => clearTimeout(timer)
+    }
+    prevSimulating.current = isSimulating
+  }, [isSimulating])
 
   const entityTypes = useMemo(() => {
     if (!graphData?.nodes) return []
@@ -371,6 +383,21 @@ export default function GraphPanel({ graphData, loading, currentPhase, isSimulat
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Simulation finished hint */}
+      {showFinishedHint && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm animate-pulse z-20">
+          Simulation complete — graph data may have been updated
+        </div>
+      )}
+
+      {/* Still processing hint */}
+      {isSimulating && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-blue-600/90 text-white px-4 py-2 rounded-lg shadow-lg text-xs z-20 flex items-center gap-2">
+          <span className="inline-block w-2 h-2 bg-white rounded-full animate-pulse" />
+          Simulation running — graph will update on completion
         </div>
       )}
     </div>

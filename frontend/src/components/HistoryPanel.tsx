@@ -68,6 +68,17 @@ export default function HistoryPanel() {
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<any>(null)
+  const [viewMode, setViewMode] = useState<"grid" | "stack">("grid")
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
+
+  const toggleCardExpand = (id: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const loadHistory = useCallback(async () => {
     try {
@@ -128,15 +139,36 @@ export default function HistoryPanel() {
         <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent max-w-[300px]" />
         <span className="text-xs font-mono text-gray-400 tracking-[3px] uppercase">History</span>
         <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent max-w-[300px]" />
+        <div className="flex gap-1">
+          <button onClick={() => setViewMode("grid")} className={`px-2 py-1 text-[10px] font-mono rounded transition-colors ${viewMode === "grid" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>Grid</button>
+          <button onClick={() => setViewMode("stack")} className={`px-2 py-1 text-[10px] font-mono rounded transition-colors ${viewMode === "stack" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>Stack</button>
+        </div>
       </div>
 
-      {/* Cards Grid */}
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-4">
-        {projects.map((project: any) => (
+      {/* Cards */}
+      <div className={`relative z-10 px-4 ${viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" : "flex flex-col items-center gap-3 max-w-xl mx-auto"}`}>
+        {projects.map((project: any, idx: number) => {
+          const isExpanded = expandedCards.has(project.simulation_id)
+          const stackStyle = viewMode === "stack" && !isExpanded ? {
+            transform: `perspective(800px) rotateX(${Math.min(idx * 1.5, 6)}deg)`,
+            zIndex: projects.length - idx,
+            opacity: Math.max(1 - idx * 0.06, 0.5),
+          } : {}
+
+          return (
           <div
             key={project.simulation_id}
-            className="bg-white border border-gray-200 p-4 cursor-pointer transition-all hover:shadow-lg hover:border-gray-400 group"
-            onClick={() => setSelected(project)}
+            className={`bg-white border border-gray-200 p-4 cursor-pointer transition-all hover:shadow-lg hover:border-gray-400 group ${viewMode === "stack" ? "w-full" : ""} ${isExpanded ? "ring-2 ring-blue-300" : ""}`}
+            style={stackStyle}
+            onClick={(e) => {
+              if (viewMode === "stack") {
+                e.stopPropagation()
+                toggleCardExpand(project.simulation_id)
+              } else {
+                setSelected(project)
+              }
+            }}
+            onDoubleClick={() => setSelected(project)}
           >
             {/* Header */}
             <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-100 font-mono text-[11px]">
@@ -188,7 +220,8 @@ export default function HistoryPanel() {
               </span>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Detail Modal */}
