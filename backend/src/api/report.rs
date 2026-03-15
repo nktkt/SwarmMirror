@@ -461,13 +461,11 @@ async fn tools_search(
     let tools = ZepToolsService::new(&state.config.zep_api_key);
     let limit = body.limit.unwrap_or(10);
 
-    match tools.search_graph(&body.graph_id, &body.query, limit).await {
-        Ok(result) => Ok(Json(json!({
-            "success": true,
-            "data": result
-        }))),
-        Err(e) => Err(AppError::Internal(format!("Search failed: {}", e))),
-    }
+    let result = tools.search_graph(&body.graph_id, &body.query, limit, "all").await;
+    Ok(Json(json!({
+        "success": true,
+        "data": result.to_dict()
+    })))
 }
 
 // POST /tools/statistics
@@ -482,11 +480,9 @@ async fn tools_statistics(
 ) -> AppResult<Json<Value>> {
     let tools = ZepToolsService::new(&state.config.zep_api_key);
 
-    match tools.get_statistics(&body.graph_id).await {
-        Ok(result) => Ok(Json(json!({
-            "success": true,
-            "data": result
-        }))),
-        Err(e) => Err(AppError::Internal(format!("Failed to get statistics: {}", e))),
-    }
+    let result = tools.get_graph_statistics(&body.graph_id).await;
+    Ok(Json(json!({
+        "success": true,
+        "data": result
+    })))
 }

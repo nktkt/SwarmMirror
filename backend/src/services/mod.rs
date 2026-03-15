@@ -10,3 +10,5 @@ pub mod simulation_config_generator;
 pub mod simulation_runner;
 pub mod report_agent;
 pub mod zep_tools;
+pub mod simulation_ipc;
+pub mod zep_graph_memory_updater;

@@ -224,7 +224,7 @@ async fn prepare_simulation(
             &config.llm_base_url,
             &config.llm_model_name,
         );
-        let profile_gen = ProfileGenerator::new(llm.clone());
+        let profile_gen = ProfileGenerator::new(llm.clone(), Some(&config.zep_api_key), Some(graph_id.clone()));
         let profiles = match profile_gen.generate_profiles(&filtered.entities, use_llm).await {
             Ok(p) => p,
             Err(e) => {
@@ -716,7 +716,7 @@ async fn generate_profiles_manual(
         task_manager.update_task(&task_id, None, Some(30), Some("Generating profiles..."), None, None);
 
         let llm = LLMClient::new(&config.llm_api_key, &config.llm_base_url, &config.llm_model_name);
-        let gen = ProfileGenerator::new(llm);
+        let gen = ProfileGenerator::new(llm, Some(&config.zep_api_key), Some(graph_id.clone()));
         let profiles = match gen.generate_profiles(&filtered.entities, use_llm).await {
             Ok(p) => p,
             Err(e) => { task_manager.fail_task(&task_id, &e.to_string()); return; }
